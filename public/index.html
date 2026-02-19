@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <title>ESP32 Real-Time Hub</title>
+        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+        <script src="/socket.io/socket.io.js"></script>
+        <style>
+            body {
+                font-family: "Segoe UI", sans-serif;
+                background: #0f172a;
+                color: white;
+                padding: 20px;
+            }
+            .container {
+                max-width: 1000px;
+                margin: auto;
+            }
+            .grid {
+                display: grid;
+                grid-template-columns: 2fr 1fr;
+                gap: 20px;
+            }
+            .card {
+                background: #1e293b;
+                padding: 25px;
+                border-radius: 15px;
+                border: 1px solid #334155;
+                box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+            }
+            .touch-indicator {
+                height: 60px;
+                border-radius: 10px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-weight: bold;
+                margin-top: 15px;
+            }
+            .active {
+                background: #10b981;
+                color: #064e3b;
+                box-shadow: 0 0 15px #10b981;
+            }
+            .inactive {
+                background: #334155;
+                color: #94a3b8;
+            }
+            button {
+                background: #3b82f6;
+                color: white;
+                border: none;
+                padding: 12px 20px;
+                border-radius: 8px;
+                cursor: pointer;
+                font-weight: 600;
+                width: 100%;
+                transition: 0.2s;
+            }
+            button:hover {
+                background: #2563eb;
+            }
+            .stat {
+                font-size: 1.5rem;
+                font-weight: bold;
+                color: #3b82f6;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>ESP32 System Telemetry</h1>
+            <div class="grid">
+                <div class="card">
+                    <canvas id="myChart"></canvas>
+                </div>
+                <div class="card">
+                    <h3>Live Sensors</h3>
+                    <p>Temperature: <span id="valT" class="stat">--</span>°C</p>
+                    <p>Humidity: <span id="valH" class="stat">--</span>%</p>
+                    <p>Supply: <span id="valV" class="stat">--</span>V</p>
+                    <div id="touchBox" class="touch-indicator inactive">
+                        NO TOUCH SENSING
+                    </div>
+                    <br />
+                    <button onclick="exportCSV()">Export Session Data</button>
+                </div>
+            </div>
+        </div>
+
+        <script>
+            const socket = io();
+            let dataLog = [
+                ["Timestamp", "Temp", "Humidity", "Voltage", "Touch"],
+            ];
+            const ctx = document.getElementById("myChart").getContext("2d");
+
+            const chart = new Chart(ctx, {
+                type: "line",
+                data: {
+                    labels: [],
+                    datasets: [
+                        {
+                            label: "Temp",
+                            borderColor: "#ef4444",
+                            data: [],
+                            tension: 0.3,
+                        },
+                        {
+                            label: "Humidity",
+                            borderColor: "#3b82f6",
+                            data: [],
+                            tension: 0.3,
+                        },
+                        {
+                            label: "Voltage",
+                            borderColor: "#f59e0b",
+                            data: [],
+                            tension: 0.3,
+                        },
+                    ],
+                },
+                options: {
+                    scales: {
+                        x: { display: false },
+                        y: { grid: { color: "#334155" } },
+                    },
+                },
+            });
+
+            socket.on("telemetry", (msg) => {
+                const now = new Date().toLocaleTimeString();
+
+                // Update Stats
+                document.getElementById("valT").innerText = msg.t;
+                document.getElementById("valH").innerText = msg.h;
+                document.getElementById("valV").innerText = msg.v;
+
+                const tBox = document.getElementById("touchBox");
+                tBox.className =
+                    msg.touch == "1"
+                        ? "touch-indicator active"
+                        : "touch-indicator inactive";
+                tBox.innerText =
+                    msg.touch == "1" ? "⚠️ TOUCH DETECTED" : "NO TOUCH SENSING";
+
+                // Update Chart (Keep last 25 points)
+                if (chart.data.labels.length > 25) {
+                    chart.data.labels.shift();
+                    chart.data.datasets.forEach((d) => d.data.shift());
+                }
+                chart.data.labels.push(now);
+                chart.data.datasets[0].data.push(msg.t);
+                chart.data.datasets[1].data.push(msg.h);
+                chart.data.datasets[2].data.push(msg.v);
+                chart.update("none");
+
+                dataLog.push([now, msg.t, msg.h, msg.v, msg.touch]);
+            });
+
+            function exportCSV() {
+                let content =
+                    "data:text/csv;charset=utf-8," +
+                    dataLog.map((r) => r.join(",")).join("\n");
+                const link = document.createElement("a");
+                link.href = encodeURI(content);
+                link.download = "esp32_telemetry.csv";
+                link.click();
+            }
+        </script>
+    </body>
+</html>
